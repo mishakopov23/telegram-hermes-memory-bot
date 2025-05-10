@@ -5,8 +5,8 @@ import requests
 app = Flask(__name__)
 
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
-LLM_API_URL = os.environ.get("LLM_API_URL")
 TELEGRAM_API = f"https://api.telegram.org/bot{TOKEN}"
+LLM_API_URL = os.environ.get("LLM_API_URL")
 
 @app.route('/', methods=['GET'])
 def home():
@@ -17,30 +17,36 @@ def webhook():
     data = request.json
     if "message" in data:
         chat_id = data["message"]["chat"]["id"]
-        user_text = data["message"].get("text", "")
+        text = data["message"].get("text", "")
 
-        # Отправляем текст локальной модели через API
+        # Отправляем запрос в локальную модель
         try:
-            response = requests.post(LLM_API_URL, json={
-                "model": "nous-hermes-llama-2-7b",
-                "messages": [{"role": "user", "content": user_text}],
-                "temperature": 0.7,
-                "max_tokens": 100
-            })
+            llm_response = requests.post(
+                LLM_API_URL,
+                json={
+                    "model": "nous-hermes-llama-2-7b",
+                    "messages": [{"role": "user", "content": text}],
+                    "temperature": 0.7,
+                    "max_tokens": 1000
+                },
+                timeout=30
+            )
 
-            if response.status_code == 200:
-                reply_text = response.json()["choices"][0]["message"]["content"]
+            if llm_response.status_code == 200:
+                result = llm_response.json()
+                reply = result["choices"][0]["message"]["content"].strip()
             else:
-                reply_text = "Ошибка при получении ответа от модели."
+                reply = "⚠️ Ошибка от LLM: " + llm_response.text
 
         except Exception as e:
-            reply_text = f"Ошибка: {str(e)}"
+            reply = f"❌ Ошибка подключения к LLM: {e}"
 
-        # Отправляем ответ пользователю в Telegram
+        # Отправляем ответ в Telegram
         requests.post(f"{TELEGRAM_API}/sendMessage", json={
             "chat_id": chat_id,
-            "text": reply_text
+            "text": reply
         })
+
     return '', 200
 
 if __name__ == '__main__':
