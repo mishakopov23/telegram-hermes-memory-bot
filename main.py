@@ -4,50 +4,48 @@ import requests
 
 app = Flask(__name__)
 
-TOKEN = os.environ.get("TELEGRAM_TOKEN")
-TELEGRAM_API = f"https://api.telegram.org/bot{TOKEN}"
-LLM_API_URL = os.environ.get("LLM_API_URL")
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
+TELEGRAM_API = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
+
+LLM_API_URL = os.environ.get("LLM_API_URL")  # например: http://65.108.12.23:8000/v1/chat/completions
 
 @app.route('/', methods=['GET'])
 def home():
-    return 'Hermes Memory Bot is running.'
+    return 'Hermes bot is active'
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
     data = request.json
     if "message" in data:
         chat_id = data["message"]["chat"]["id"]
-        text = data["message"].get("text", "")
+        user_msg = data["message"].get("text", "")
 
-        # Отправляем запрос в локальную модель
+        # Формируем запрос к локальной LLM
         try:
-            llm_response = requests.post(
-                LLM_API_URL,
-                json={
-                    "model": "nous-hermes-llama-2-7b",
-                    "messages": [{"role": "user", "content": text}],
-                    "temperature": 0.7,
-                    "max_tokens": 1000
-                },
-                timeout=30
-            )
+            response = requests.post(LLM_API_URL, json={
+                "model": "nous-hermes-llama-2-7b",
+                "messages": [
+                    {"role": "user", "content": user_msg}
+                ],
+                "temperature": 0.7,
+                "max_tokens": 1000
+            }, timeout=60)
 
-            if llm_response.status_code == 200:
-                result = llm_response.json()
-                reply = result["choices"][0]["message"]["content"].strip()
+            if response.status_code == 200:
+                ai_reply = response.json()["choices"][0]["message"]["content"].strip()
             else:
-                reply = "⚠️ Ошибка от LLM: " + llm_response.text
+                ai_reply = "Ошибка генерации ответа (код {})".format(response.status_code)
 
         except Exception as e:
-            reply = f"❌ Ошибка подключения к LLM: {e}"
+            ai_reply = f"Ошибка соединения с ИИ: {e}"
 
         # Отправляем ответ в Telegram
         requests.post(f"{TELEGRAM_API}/sendMessage", json={
             "chat_id": chat_id,
-            "text": reply
+            "text": ai_reply
         })
 
     return '', 200
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
