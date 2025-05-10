@@ -5,8 +5,8 @@ import requests
 app = Flask(__name__)
 
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
+LLM_API_URL = os.environ.get("LLM_API_URL")
 TELEGRAM_API = f"https://api.telegram.org/bot{TOKEN}"
-LLM_API_URL = os.environ.get("LLM_API_URL", "http://127.0.0.1:8000/v1/chat/completions")
 
 @app.route('/', methods=['GET'])
 def home():
@@ -17,25 +17,29 @@ def webhook():
     data = request.json
     if "message" in data:
         chat_id = data["message"]["chat"]["id"]
-        text = data["message"].get("text", "")
+        user_text = data["message"].get("text", "")
 
-        payload = {
-            "model": "nous-hermes-llama-2-7b",
-            "messages": [{"role": "user", "content": text}],
-            "temperature": 0.7,
-            "max_tokens": 500
-        }
-
+        # Отправляем текст локальной модели через API
         try:
-            response = requests.post(LLM_API_URL, json=payload)
-            result = response.json()
-            reply = result["choices"][0]["message"]["content"]
-        except Exception as e:
-            reply = f"Ошибка: {e}"
+            response = requests.post(LLM_API_URL, json={
+                "model": "nous-hermes-llama-2-7b",
+                "messages": [{"role": "user", "content": user_text}],
+                "temperature": 0.7,
+                "max_tokens": 100
+            })
 
+            if response.status_code == 200:
+                reply_text = response.json()["choices"][0]["message"]["content"]
+            else:
+                reply_text = "Ошибка при получении ответа от модели."
+
+        except Exception as e:
+            reply_text = f"Ошибка: {str(e)}"
+
+        # Отправляем ответ пользователю в Telegram
         requests.post(f"{TELEGRAM_API}/sendMessage", json={
             "chat_id": chat_id,
-            "text": reply
+            "text": reply_text
         })
     return '', 200
 
